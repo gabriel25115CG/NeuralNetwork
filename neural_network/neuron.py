@@ -2,8 +2,8 @@ import random
 
 class Neuron:
     def __init__(self, n_inputs):
-        self.weights = [random.uniform(-1, 1) for _ in range(n_inputs)]
-        self.bias = random.uniform(-1, 1)
+        self.weights = [0.5 for _ in range(n_inputs)]
+        self.bias = 0.0
         self.last_inputs = []
         self.last_output = 0.0
         self.grad_weights = [0.0] * n_inputs

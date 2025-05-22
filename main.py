@@ -26,12 +26,18 @@ def interactive_prediction(model):
             print("Entrée invalide. Veuillez entrer un nombre réel ou 'q' pour quitter.")
 
 if __name__ == "__main__":
+    # Normalisation des données
+    data_norm = [(x - data_min) / (data_max - data_min) for x in data]
+    targets_norm = [(y - targets_min) / (targets_max - targets_min) for y in targets]
+
     # Création et entraînement du réseau
     nn = NeuralNetwork([1, 1])
-    losses = nn.train(data, targets, learning_rate=0.01, epochs=200)
+    losses = nn.train(data_norm, targets_norm, learning_rate=0.01, epochs=200)
 
-    # Visualisations après entraînement
+    # Visualisation de la courbe de perte
     plot_loss_curve(losses)
+
+    # Visualisation des prédictions après entraînement
     plot_predictions(nn, data, targets, data_min, data_max, targets_min, targets_max)
 
     # Prédictions sur valeurs fixes
@@ -43,5 +49,5 @@ if __name__ == "__main__":
         pred_real = denormalize(pred_norm, targets_min, targets_max)
         print(f"Superficie: {x_raw} m² => Prix prédit: {pred_real:.2f} milliers $")
 
-    # Prédiction utilisateur
+    # Prédiction interactive utilisateur
     interactive_prediction(nn)
