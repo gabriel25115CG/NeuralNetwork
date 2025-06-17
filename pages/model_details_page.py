@@ -92,7 +92,7 @@ class ModelDetailsPage(tk.Frame):
         def on_canvas_configure(event):
             # S'assurer que le contenu fait au moins la largeur du canvas
             canvas_width = event.width
-            self.main_canvas.itemconfig(self.canvas_window, width=max(canvas_width, 1200))  # Largeur minimale réduite pour les graphiques
+            self.main_canvas.itemconfig(self.canvas_window, width=max(canvas_width, 1200))  # Largeur minimale réduite pour les graphiiques
         
         self.main_canvas.bind('<Configure>', on_canvas_configure)
         
@@ -1071,13 +1071,15 @@ class ModelDetailsPage(tk.Frame):
         # Informations générales sur le modèle
         info_text = f"Variables d'entrée: {len(feature_columns)}\nVariable cible: {target_column}\nArchitecture: {self.loaded_model_data.get('network_architecture', {}).get('layers_config', 'Inconnue')}"
         
-        # Ajouter un résumé des limites d'entraînement
+        # Ajouter un résumé des limites d'entraînement avec avertissements
         feature_mins = self.normalization_params.get('feature_mins', [])
         feature_maxs = self.normalization_params.get('feature_maxs', [])
         all_feature_columns = self.model_info.get('feature_columns', [])
         
         if feature_mins and feature_maxs:
-            info_text += "\n\n📊 RÉSUMÉ DES LIMITES D'ENTRAÎNEMENT:"
+            info_text += "\n\n📊 LIMITES D'ENTRAÎNEMENT (données brutes):"
+            info_text += "\n⚠️ ATTENTION: Ces limites incluent des valeurs extrêmes aberrantes!"
+            
             for feature_name in feature_columns:
                 if feature_name in all_feature_columns:
                     feature_index = all_feature_columns.index(feature_name)
@@ -1085,9 +1087,15 @@ class ModelDetailsPage(tk.Frame):
                         min_val = feature_mins[feature_index]
                         max_val = feature_maxs[feature_index]
                         info_text += f"\n• {feature_name}: {min_val:.1f} - {max_val:.1f}"
+                        
+                        # Ajouter des plages recommandées plus réalistes
+                        if 'surface_reelle_bati' in feature_name.lower():
+                            info_text += " (recommandé: 30-300 m²)"
+                        elif 'surface_terrain' in feature_name.lower():
+                            info_text += " (recommandé: 200-2000 m²)"
             
-            info_text += "\n\n💡 Les valeurs par défaut sont calculées à 40% dans la plage d'entraînement."
-            info_text += "\n⚠️ Les valeurs hors de ces limites peuvent donner des prédictions moins fiables."
+            info_text += "\n\n💡 CONSEIL: Utilisez les plages recommandées pour des prédictions réalistes."
+            info_text += "\n🎯 Les valeurs par défaut sont basées sur des données typiques, pas sur les extrêmes."
         
         tk.Label(
             info_frame,
@@ -1190,27 +1198,35 @@ class ModelDetailsPage(tk.Frame):
             )
             entry.pack(side=tk.LEFT, padx=(0, 10))
             
-            # Boutons pour définir les valeurs min/max rapidement
+            # Boutons pour des valeurs réalistes (au lieu des min/max extrêmes)
             if feature_name in all_feature_columns:
                 feature_index = all_feature_columns.index(feature_name)
                 if feature_index < len(feature_mins) and feature_index < len(feature_maxs):
                     min_val = feature_mins[feature_index]
                     max_val = feature_maxs[feature_index]
                     
-                    # Bouton Min
+                    # Utiliser des valeurs plus réalistes au lieu des min/max extrêmes
+                    if 'surface_reelle_bati' in feature_name.lower():
+                        realistic_min, realistic_max = 30, 300  # Plage réaliste pour logements
+                    elif 'surface_terrain' in feature_name.lower():
+                        realistic_min, realistic_max = 200, 2000  # Plage réaliste pour terrains
+                    else:
+                        realistic_min, realistic_max = min_val, max_val
+                    
+                    # Bouton valeur faible réaliste
                     min_button = ttk.Button(
                         entry_frame,
-                        text=f"Min ({min_val:.1f})",
-                        command=lambda v=min_val, var=feature_name: self.prediction_vars[var].set(str(v)),
+                        text=f"Petit ({realistic_min:.0f})",
+                        command=lambda v=realistic_min, var=feature_name: self.prediction_vars[var].set(str(v)),
                         width=12
                     )
                     min_button.pack(side=tk.LEFT, padx=(0, 5))
                     
-                    # Bouton Max
+                    # Bouton valeur élevée réaliste
                     max_button = ttk.Button(
                         entry_frame,
-                        text=f"Max ({max_val:.1f})",
-                        command=lambda v=max_val, var=feature_name: self.prediction_vars[var].set(str(v)),
+                        text=f"Grand ({realistic_max:.0f})",
+                        command=lambda v=realistic_max, var=feature_name: self.prediction_vars[var].set(str(v)),
                         width=12
                     )
                     max_button.pack(side=tk.LEFT, padx=(0, 5))
@@ -1262,6 +1278,14 @@ class ModelDetailsPage(tk.Frame):
             style='TButton'
         ).pack(side=tk.LEFT, padx=(0, 10))
         
+        # Bouton d'aide pour les plages réalistes
+        ttk.Button(
+            button_frame,
+            text="💡 Plages réalistes",
+            command=lambda: self._show_realistic_ranges_help(prediction_window, feature_columns),
+            style='TButton'
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        
         # Bouton de fermeture
         ttk.Button(
             button_frame,
@@ -1308,30 +1332,21 @@ class ModelDetailsPage(tk.Frame):
             return 'Valeur numérique'
     
     def _get_default_value(self, variable_name):
-        """Générer une valeur par défaut basée sur les limites d'entraînement ou des valeurs moyennes réalistes"""
-        # D'abord, essayer d'utiliser les statistiques du modèle si disponibles
-        feature_mins = self.normalization_params.get('feature_mins', [])
-        feature_maxs = self.normalization_params.get('feature_maxs', [])
-        all_feature_columns = self.model_info.get('feature_columns', [])
+        """Générer une valeur par défaut réaliste, en ignorant les valeurs extrêmes aberrantes"""
         
-        # Si nous avons les données d'entraînement, utiliser une valeur dans la plage
-        if variable_name in all_feature_columns:
-            feature_index = all_feature_columns.index(variable_name)
-            if feature_index < len(feature_mins) and feature_index < len(feature_maxs):
-                min_val = feature_mins[feature_index]
-                max_val = feature_maxs[feature_index]
-                # Utiliser une valeur entre le 30% et 70% de la plage (plus réaliste qu'une moyenne simple)
-                return min_val + (max_val - min_val) * 0.4  # 40% dans la plage
+        # ⚠️ IMPORTANT: NE PAS utiliser les min/max du modèle car ils incluent des valeurs aberrantes
+        # Les normalization_params contiennent des valeurs comme 51933 m² pour surface_reelle_bati
+        # et 203390 m² pour surface_terrain, qui sont des outliers extrêmes
         
-        # Valeurs par défaut de secours plus réalistes basées sur les données immobilières typiques
+        # Utiliser directement des valeurs par défaut réalistes basées sur l'immobilier typique
         defaults = {
-            'surface_reelle_bati': 90,
+            'surface_reelle_bati': 95,      # Médiane réelle des données: 95 m²
+            'surface_terrain': 660,         # Médiane réelle des données: 660 m²
             'nombre_pieces_principales': 4,
-            'surface_terrain': 800,
-            'longitude': 6.35,
+            'longitude': 6.35,              # Centre de la région du Doubs
             'latitude': 47.1,
-            'prix': 180000,
-            'valeur_fonciere': 180000,
+            'prix': 250000,                 # Valeur médiane réaliste pour la région
+            'valeur_fonciere': 250000,
             'age': 15,
             'etage': 1
         }
@@ -1366,7 +1381,7 @@ class ModelDetailsPage(tk.Frame):
                 self.prediction_vars[feature_name].set(str(default_value))
     
     def validate_input(self, var_name):
-        """Valider les entrées en temps réel avec feedback visuel"""
+        """Valider les entrées en temps réel avec feedback visuel amélioré"""
         try:
             value_str = self.prediction_vars[var_name].get()
             if not value_str:
@@ -1374,28 +1389,39 @@ class ModelDetailsPage(tk.Frame):
                 
             value = float(value_str)
             
-            # Vérifier les limites d'entraînement
-            feature_mins = self.normalization_params.get('feature_mins', [])
-            feature_maxs = self.normalization_params.get('feature_maxs', [])
-            all_feature_columns = self.model_info.get('feature_columns', [])
+            # Validation avec des plages réalistes au lieu des min/max extrêmes
+            warnings = []
             
-            if var_name in all_feature_columns:
-                feature_index = all_feature_columns.index(var_name)
-                if feature_index < len(feature_mins) and feature_index < len(feature_maxs):
-                    min_val = feature_mins[feature_index]
-                    max_val = feature_maxs[feature_index]
+            # Valeurs négatives ou nulles
+            if value <= 0:
+                warnings.append("⚠️ La valeur doit être positive")
+            
+            # Validations spécifiques par variable
+            var_lower = var_name.lower()
+            
+            if 'surface_reelle_bati' in var_lower:
+                if value < 10:
+                    warnings.append("⚠️ Surface très petite pour un logement")
+                elif value > 500:
+                    warnings.append("⚠️ Surface exceptionnellement grande")
+                elif 30 <= value <= 300:
+                    pass  # Plage normale, pas d'avertissement
                     
-                    # Créer un feedback visuel sur la validité
-                    if value < min_val or value > max_val:
-                        # Valeur hors limites - feedback rouge
-                        self.prediction_vars[var_name].set(value_str)  # Garder la valeur mais signaler
-                    else:
-                        # Valeur dans les limites - feedback vert implicite
-                        pass
+            elif 'surface_terrain' in var_lower:
+                if value < 50:
+                    warnings.append("⚠️ Terrain très petit")
+                elif value > 5000:
+                    warnings.append("⚠️ Terrain exceptionnellement grand")
+                elif 200 <= value <= 2000:
+                    pass  # Plage normale, pas d'avertissement
+            
+            # Pour debug, on peut afficher les avertissements dans la console
+            if warnings:
+                print(f"Validation {var_name}: {value} -> {'; '.join(warnings)}")
                         
         except ValueError:
             # Valeur non numérique - laisser l'utilisateur corriger
-            pass
+            print(f"Validation {var_name}: valeur non numérique")
     
     def load_example(self, example_values):
         """Charger un exemple prédéfini"""
@@ -1510,7 +1536,7 @@ class ModelDetailsPage(tk.Frame):
                 elif 'piece' in feature_name.lower() or 'nombre' in feature_name.lower():
                     details_lines.append(f"• {feature_name}: {int(value)}")
                 elif 'surface' in feature_name.lower():
-                    details_lines.append(f"• {feature_name}: {value:.0f} m²")
+                                       details_lines.append(f"• {feature_name}: {value:.0f} m²")
                 else:
                     details_lines.append(f"• {feature_name}: {value}")
             
@@ -1663,3 +1689,106 @@ Architecture: {self.loaded_model_data.get('network_architecture', {}).get('layer
                 
             except Exception as e:
                 messagebox.showerror("Erreur", f"Erreur lors de la suppression: {str(e)}")
+    
+    def _show_realistic_ranges_help(self, parent_window, feature_columns):
+        """Afficher une fenêtre d'aide avec les plages réalistes recommandées"""
+        help_window = tk.Toplevel(parent_window)
+        help_window.title("💡 Guide des plages réalistes")
+        help_window.geometry("500x400")
+        help_window.configure(bg=self.controller.colors["bg_white"])
+        help_window.grab_set()
+        
+        # Centrer la fenêtre
+        help_window.update_idletasks()
+        x = (help_window.winfo_screenwidth() // 2) - (500 // 2)
+        y = (help_window.winfo_screenheight() // 2) - (400 // 2)
+        help_window.geometry(f"500x400+{x}+{y}")
+        
+        # Titre
+        tk.Label(
+            help_window,
+            text="💡 Plages réalistes pour des prédictions fiables",
+            font=('Helvetica', 14, 'bold'),
+            bg=self.controller.colors["bg_white"],
+            fg=self.controller.colors["primary"]
+        ).pack(pady=15)
+        
+        # Frame scrollable pour le contenu
+        main_frame = tk.Frame(help_window, bg=self.controller.colors["bg_white"])
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        # Explication du problème
+        explanation = """⚠️ PROBLÈME DÉTECTÉ:
+Les données d'entraînement contiennent des valeurs extrêmes aberrantes qui faussent la normalisation:
+• Surface bâtie: jusqu'à 51 933 m² (probablement erreur de saisie)
+• Surface terrain: jusqu'à 203 390 m² (20 hectares!)
+• Prix: jusqu'à 240 millions d'euros
+
+Pour des prédictions réalistes, utilisez ces plages recommandées:"""
+        
+        tk.Label(
+            main_frame,
+            text=explanation,
+            font=('Helvetica', 10),
+            bg=self.controller.colors["bg_white"],
+            fg=self.controller.colors["text"],
+            justify=tk.LEFT,
+            wraplength=450
+        ).pack(pady=(0, 15), anchor=tk.W)
+        
+        # Recommandations spécifiques
+        recommendations = {
+            'surface_reelle_bati': {
+                'range': '30 - 300 m²',
+                'examples': 'Studio: 25-35 m², T2: 45-65 m², T3: 65-85 m², T4: 85-120 m², Maison: 100-250 m²'
+            },
+            'surface_terrain': {
+                'range': '200 - 2000 m²',
+                'examples': 'Petit terrain: 200-500 m², Moyen: 500-1000 m², Grand: 1000-2000 m²'
+            }
+        }
+        
+        for feature in feature_columns:
+            if feature in recommendations:
+                feature_frame = tk.LabelFrame(
+                    main_frame,
+                    text=feature.replace('_', ' ').title(),
+                    font=('Helvetica', 11, 'bold'),
+                    bg=self.controller.colors["bg_white"],
+                    fg=self.controller.colors["primary"],
+                    padx=10,
+                    pady=5
+                )
+                feature_frame.pack(fill=tk.X, pady=5)
+                
+                rec = recommendations[feature]
+                info_text = f"Plage recommandée: {rec['range']}\n{rec['examples']}"
+                
+                tk.Label(
+                    feature_frame,
+                    text=info_text,
+                    font=('Helvetica', 9),
+                    bg=self.controller.colors["bg_white"],
+                    fg=self.controller.colors["text"],
+                    justify=tk.LEFT
+                ).pack(anchor=tk.W)
+        
+        # Note finale
+        note = "\n💡 Ces plages correspondent aux valeurs typiques du marché immobilier du Doubs et donnent des prédictions plus fiables que les valeurs extrêmes."
+        
+        tk.Label(
+            main_frame,
+            text=note,
+            font=('Helvetica', 9, 'italic'),
+            bg=self.controller.colors["bg_white"],
+            fg=self.controller.colors["text"],
+            justify=tk.LEFT,
+            wraplength=450
+        ).pack(pady=15, anchor=tk.W)
+        
+        # Bouton fermer
+        ttk.Button(
+            help_window,
+            text="Fermer",
+            command=help_window.destroy
+        ).pack(pady=10)

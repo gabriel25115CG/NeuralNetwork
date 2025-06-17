@@ -131,6 +131,10 @@ class ModelTrainingPage(tk.Frame):
         
     def _on_mousewheel(self, event):
         self.main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+    
+    def _on_horizontal_mousewheel(self, event):
+        """Scroll horizontal avec Shift+molette"""
+        self.viz_canvas.xview_scroll(int(-1*(event.delta/120)), "units")
         
     def create_training_content(self):
         # Section 1: Configuration du modèle
@@ -300,7 +304,7 @@ class ModelTrainingPage(tk.Frame):
         )
         self.results_text.pack(fill=tk.X, pady=(10, 10))
         
-        # Section 4: Visualisation
+        # Section 4: Visualisation avec scroll horizontal
         self.viz_section = tk.LabelFrame(
             self.scrollable_content,
             text="Visualisation des résultats",
@@ -311,6 +315,30 @@ class ModelTrainingPage(tk.Frame):
             pady=15
         )
         self.viz_section.pack(fill=tk.X, pady=(0, 20))
+        
+        # Container avec scroll horizontal pour les graphiques
+        self.viz_container = tk.Frame(self.viz_section, bg=self.controller.colors["bg_white"])
+        self.viz_container.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        self.viz_canvas = tk.Canvas(self.viz_container, bg=self.controller.colors["bg_white"], height=600)
+        self.viz_scrollbar_h = ttk.Scrollbar(self.viz_container, orient="horizontal", command=self.viz_canvas.xview)
+        self.viz_scrollable_frame = tk.Frame(self.viz_canvas, bg=self.controller.colors["bg_white"])
+        
+        self.viz_scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.viz_canvas.configure(scrollregion=self.viz_canvas.bbox("all"))
+        )
+        
+        self.viz_canvas.create_window((0, 0), window=self.viz_scrollable_frame, anchor="nw")
+        self.viz_canvas.configure(xscrollcommand=self.viz_scrollbar_h.set)
+        
+        self.viz_canvas.pack(side="top", fill="both", expand=True)
+        self.viz_scrollbar_h.pack(side="bottom", fill="x")
+        
+        # Bind mousewheel horizontal
+        self.viz_canvas.bind("<Shift-MouseWheel>", self._on_horizontal_mousewheel)
+        self.viz_canvas.bind("<Button-4>", lambda e: self.viz_canvas.xview_scroll(-1, "units"))
+        self.viz_canvas.bind("<Button-5>", lambda e: self.viz_canvas.xview_scroll(1, "units"))
         
         # Section 5: Sauvegarde
         self.save_section = tk.LabelFrame(
@@ -768,16 +796,16 @@ class ModelTrainingPage(tk.Frame):
         self.results_text.config(state=tk.DISABLED)
     
     def create_visualization(self, y_pred):
-        """Créer les graphiques de visualisation optimisés pour les réseaux de neurones"""
+        """Créer les graphiques de visualisation optimisés en 2x2 avec scroll horizontal"""
         try:
             # Nettoyer la section de visualisation
-            for widget in self.viz_section.winfo_children():
+            for widget in self.viz_scrollable_frame.winfo_children():
                 widget.destroy()
             
             # Vérifier qu'on a assez de données
             if len(self.y_test) < 3:
                 warning_label = tk.Label(
-                    self.viz_section,
+                    self.viz_scrollable_frame,
                     text=f"⚠️ Attention: Seulement {len(self.y_test)} échantillons de test.\nAugmentez la taille du dataset ou réduisez le pourcentage de test.",
                     bg=self.controller.colors["bg_white"],
                     fg=self.controller.colors["accent"],
@@ -795,67 +823,51 @@ class ModelTrainingPage(tk.Frame):
                 y_test_display = [y * (self.target_max - self.target_min) + self.target_min for y in self.y_test]
                 y_pred_display = [y * (self.target_max - self.target_min) + self.target_min for y in y_pred]
             
-            # Créer la figure avec 3 graphiques optimisés
-            fig = plt.figure(figsize=(16, 5))
+            # Créer la figure avec 4 graphiques en 2x2, plus petits
+            fig = plt.figure(figsize=(12, 10))  # Réduit de 16x5 à 12x10
             fig.patch.set_facecolor('white')
-            fig.suptitle('🧠 Analyse de Performance du Réseau de Neurones', fontsize=16, fontweight='bold', y=0.98)
+            fig.suptitle('🧠 Analyse de Performance du Réseau de Neurones', fontsize=14, fontweight='bold', y=0.95)
             
-            # === GRAPHIQUE 1: Performance de Prédiction (le plus important) ===
-            ax1 = plt.subplot(131)
+            # === GRAPHIQUE 1: Performance de Prédiction (en haut à gauche) ===
+            ax1 = plt.subplot(2, 2, 1)  # 2x2 grid, position 1
             
             # Calculer les erreurs pour la colorisation
             absolute_errors = [abs(real - pred) for real, pred in zip(y_test_display, y_pred_display)]
             
             # Nuage de points avec colorisation par erreur
             scatter = ax1.scatter(y_test_display, y_pred_display, c=absolute_errors, 
-                                 alpha=0.8, s=80, cmap='RdYlGn_r',
-                                 edgecolors='black', linewidth=0.5)
+                                 alpha=0.7, s=50, cmap='RdYlGn_r',  # Points plus petits
+                                 edgecolors='black', linewidth=0.3)
             
             # Ligne parfaite (y=x)
             min_val = min(min(y_test_display), min(y_pred_display))
             max_val = max(max(y_test_display), max(y_pred_display))
             perfect_line = [min_val, max_val]
-            ax1.plot(perfect_line, perfect_line, 'k--', alpha=0.8, linewidth=2, label='Prédiction parfaite')
-            
-            # Zones de tolérance
-            margin = (max_val - min_val) * 0.05
-            x_range = [min_val - margin + i * (max_val - min_val + 2*margin) / 99 for i in range(100)]
-            ax1.fill_between(x_range, [x * 0.9 for x in x_range], [x * 1.1 for x in x_range], 
-                           alpha=0.2, color='green', label='±10% (Excellent)')
-            ax1.fill_between(x_range, [x * 0.8 for x in x_range], [x * 0.9 for x in x_range], 
-                           alpha=0.1, color='orange')
-            ax1.fill_between(x_range, [x * 1.1 for x in x_range], [x * 1.2 for x in x_range], 
-                           alpha=0.1, color='orange', label='±20% (Acceptable)')
+            ax1.plot(perfect_line, perfect_line, 'k--', alpha=0.8, linewidth=1.5, label='Parfait')
             
             # Métriques importantes
             from neural_network.utils import r2_score, mean_absolute_error
             r2 = r2_score(y_test_display, y_pred_display)
             mae = mean_absolute_error(y_test_display, y_pred_display)
             
-            ax1.set_xlabel("Valeurs Réelles (€)", fontsize=11, fontweight='bold')
-            ax1.set_ylabel("Prédictions du Réseau (€)", fontsize=11, fontweight='bold')
-            ax1.set_title(f"Performance de Prédiction\nR² = {r2:.3f} | MAE = {mae:.0f}€", fontsize=12, fontweight='bold')
+            ax1.set_xlabel("Valeurs Réelles", fontsize=9)
+            ax1.set_ylabel("Prédictions", fontsize=9)
+            ax1.set_title(f"Performance\nR² = {r2:.3f} | MAE = {mae:.0f}", fontsize=10, fontweight='bold')
             ax1.grid(True, alpha=0.3)
-            ax1.legend(fontsize=9)
+            ax1.legend(fontsize=8)
+            ax1.tick_params(labelsize=8)
             
-            # Colorbar pour les erreurs
-            try:
-                cbar = plt.colorbar(scatter, ax=ax1, shrink=0.8, pad=0.02)
-                cbar.set_label('Erreur Absolue (€)', rotation=270, labelpad=15, fontsize=10)
-            except:
-                pass
-              # === GRAPHIQUE 2: Historique de l'Entraînement (Loss) ===
-            ax2 = plt.subplot(132)
+            # === GRAPHIQUE 2: Historique de l'Entraînement (en haut à droite) ===
+            ax2 = plt.subplot(2, 2, 2)  # 2x2 grid, position 2
             
-            # Accéder à l'historique des losses sauvegardé pendant l'entraînement
             if hasattr(self, 'losses') and self.losses:
                 losses = self.losses
                 epochs = list(range(1, len(losses) + 1))
                 
-                ax2.plot(epochs, losses, 'b-', linewidth=2, alpha=0.8, label='Loss d\'entraînement')
-                ax2.fill_between(epochs, losses, alpha=0.3, color='blue')
+                ax2.plot(epochs, losses, 'b-', linewidth=1.5, alpha=0.8, label='Loss')
+                ax2.fill_between(epochs, losses, alpha=0.2, color='blue')
                 
-                # Ligne de tendance lissée
+                # Ligne de tendance lissée (simplifiée)
                 if len(losses) > 10:
                     window_size = max(3, len(losses) // 10)
                     smoothed_losses = []
@@ -863,27 +875,43 @@ class ModelTrainingPage(tk.Frame):
                         start = max(0, i - window_size // 2)
                         end = min(len(losses), i + window_size // 2 + 1)
                         smoothed_losses.append(sum(losses[start:end]) / (end - start))
-                    ax2.plot(epochs, smoothed_losses, 'r--', linewidth=2, alpha=0.8, label='Tendance lissée')
+                    ax2.plot(epochs, smoothed_losses, 'r--', linewidth=1.5, alpha=0.8, label='Tendance')
                 
-                ax2.set_xlabel("Époques", fontsize=11, fontweight='bold')
-                ax2.set_ylabel("Loss (MSE)", fontsize=11, fontweight='bold')
-                ax2.set_title(f"Convergence du Réseau\n{len(losses)} époques - Final: {losses[-1]:.4f}", fontsize=12, fontweight='bold')
+                ax2.set_xlabel("Époques", fontsize=9)
+                ax2.set_ylabel("Loss", fontsize=9)
+                ax2.set_title(f"Convergence\nFinal: {losses[-1]:.4f}", fontsize=10, fontweight='bold')
                 ax2.grid(True, alpha=0.3)
-                ax2.legend(fontsize=9)
-                ax2.set_yscale('log')  # Échelle log pour mieux voir la convergence
-                
+                ax2.legend(fontsize=8)
+                ax2.set_yscale('log')
+                ax2.tick_params(labelsize=8)
             else:
-                # Si pas d'historique, créer un graphique avec les données disponibles
-                ax2.text(0.5, 0.5, 'Historique de Loss\nnon disponible\n\nVérifiez que l\'entraînement\na été effectué correctement', 
-                        horizontalalignment='center', verticalalignment='center',
-                        transform=ax2.transAxes, fontsize=11, style='italic',
-                        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray", alpha=0.7))
-                ax2.set_title("Convergence du Réseau", fontsize=12, fontweight='bold')
-              # === GRAPHIQUE 3: Graphique en Secteurs de la Qualité des Prédictions ===
-            ax3 = plt.subplot(133)
+                ax2.text(0.5, 0.5, 'Historique Loss\nnon disponible', 
+                        ha='center', va='center', transform=ax2.transAxes, fontsize=9)
+                ax2.set_title("Convergence", fontsize=10, fontweight='bold')
             
-            # Calcul des erreurs relatives en pourcentage
+            # === GRAPHIQUE 3: Distribution des Erreurs (en bas à gauche) ===
+            ax3 = plt.subplot(2, 2, 3)  # 2x2 grid, position 3
+            
+            # Calculer les erreurs relatives en pourcentage
             relative_errors = [(pred - real) / real * 100 for real, pred in zip(y_test_display, y_pred_display) if real != 0]
+            
+            if relative_errors:
+                # Histogramme des erreurs
+                ax3.hist(relative_errors, bins=min(15, len(relative_errors)//2), alpha=0.7, color='skyblue', edgecolor='black', linewidth=0.5)
+                ax3.axvline(0, color='red', linestyle='--', linewidth=2, label='Erreur nulle')
+                
+                mean_error = sum(relative_errors) / len(relative_errors)
+                ax3.axvline(mean_error, color='orange', linestyle='-', linewidth=2, label=f'Moyenne: {mean_error:.1f}%')
+                
+                ax3.set_xlabel("Erreur (%)", fontsize=9)
+                ax3.set_ylabel("Fréquence", fontsize=9)
+                ax3.set_title(f"Distribution des Erreurs\n({len(relative_errors)} échantillons)", fontsize=10, fontweight='bold')
+                ax3.grid(True, alpha=0.3)
+                ax3.legend(fontsize=8)
+                ax3.tick_params(labelsize=8)
+            
+            # === GRAPHIQUE 4: Qualité des Prédictions (en bas à droite) ===
+            ax4 = plt.subplot(2, 2, 4)  # 2x2 grid, position 4
             
             if relative_errors:
                 # Compter les prédictions par niveau de qualité
@@ -896,74 +924,45 @@ class ModelTrainingPage(tk.Frame):
                 
                 # Données pour le graphique en secteurs
                 sizes = [excellent, good, acceptable, poor]
-                labels = [f'🎯 Excellent (±5%)\n{excellent} prédictions\n({excellent/total_predictions*100:.1f}%)', 
-                         f'✅ Bon (±10%)\n{good} prédictions\n({good/total_predictions*100:.1f}%)',
-                         f'⚠️ Acceptable (±20%)\n{acceptable} prédictions\n({acceptable/total_predictions*100:.1f}%)', 
-                         f'❌ Médiocre (>±20%)\n{poor} prédictions\n({poor/total_predictions*100:.1f}%)']
-                colors = ['#2ecc71', '#f39c12', '#e67e22', '#e74c3c']  # Vert, Orange, Orange foncé, Rouge
-                explode = (0.05, 0, 0, 0.1 if poor > 0 else 0)  # Faire ressortir excellent et médiocre si il y en a
+                labels = [f'Excellent\n(±5%)', f'Bon\n(±10%)', f'Acceptable\n(±20%)', f'Médiocre\n(>±20%)']
+                colors = ['#2ecc71', '#f39c12', '#e67e22', '#e74c3c']
+                explode = (0.05, 0, 0, 0.1 if poor > 0 else 0)
                 
-                # Filtrer les sections vides pour éviter les erreurs
+                # Filtrer les sections vides
                 non_zero_data = [(size, label, color, exp) for size, label, color, exp in zip(sizes, labels, colors, explode) if size > 0]
                 if non_zero_data:
                     sizes_filtered, labels_filtered, colors_filtered, explode_filtered = zip(*non_zero_data)
                     
-                    # Créer le graphique en secteurs
-                    wedges, texts, autotexts = ax3.pie(sizes_filtered, labels=labels_filtered, colors=colors_filtered, 
-                                                      explode=explode_filtered, autopct='%1.1f%%', startangle=90,
-                                                      textprops={'fontsize': 8, 'weight': 'bold'})
+                    wedges, texts, autotexts = ax4.pie(sizes_filtered, labels=labels_filtered, colors=colors_filtered, 
+                                                      explode=explode_filtered, autopct='%1.0f%%', startangle=90,
+                                                      textprops={'fontsize': 7})
                     
-                    # Améliorer l'apparence du texte
                     for autotext in autotexts:
                         autotext.set_color('white')
                         autotext.set_fontweight('bold')
-                        autotext.set_fontsize(9)
-                else:
-                    # Si toutes les sections sont vides, afficher un message
-                    ax3.text(0.5, 0.5, 'Aucune donnée\nd\'erreur disponible', 
-                            horizontalalignment='center', verticalalignment='center',
-                            transform=ax3.transAxes, fontsize=12, style='italic')
+                        autotext.set_fontsize(8)
                 
-                ax3.set_title('🎯 Qualité des Prédictions du Réseau\n(Répartition par niveau de précision)', 
-                             fontsize=11, fontweight='bold', pad=15)
-                
-                # Ajouter un résumé statistique en bas
-                mean_error = sum(relative_errors) / len(relative_errors)
-                std_error = (sum((e - mean_error)**2 for e in relative_errors) / len(relative_errors))**0.5
-                precision_5 = (excellent/total_predictions*100) if total_predictions > 0 else 0
-                precision_10 = ((excellent+good)/total_predictions*100) if total_predictions > 0 else 0
-                
-                stats_text = f"""📈 RÉSUMÉ:
-Erreur moyenne: {mean_error:.1f}%
-Précision ±5%: {precision_5:.1f}%
-Précision ±10%: {precision_10:.1f}%"""
-                
-                ax3.text(0.5, -0.15, stats_text, transform=ax3.transAxes, fontsize=9,
-                        bbox=dict(boxstyle='round,pad=0.5', facecolor='lightblue', alpha=0.3),
-                        verticalalignment='top', horizontalalignment='center')
-                
-            else:
-                ax3.text(0.5, 0.5, 'Pas de données\nd\'erreur disponibles', 
-                        horizontalalignment='center', verticalalignment='center',
-                        transform=ax3.transAxes, fontsize=12, style='italic')
+                ax4.set_title(f'Qualité des Prédictions\n{excellent+good}/{total_predictions} ≤10%', 
+                             fontsize=10, fontweight='bold')
             
             plt.tight_layout()
+            plt.subplots_adjust(top=0.92, hspace=0.4, wspace=0.3)  # Ajuster l'espacement
             
-            # Intégrer dans l'interface
-            canvas = FigureCanvasTkAgg(fig, master=self.viz_section)
+            # Intégrer dans l'interface avec scroll
+            canvas = FigureCanvasTkAgg(fig, master=self.viz_scrollable_frame)
             canvas.draw()
-            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, pady=10)
+            canvas.get_tk_widget().pack(side=tk.LEFT, padx=10)
             
-            # === SECTION STATISTIQUES AMÉLIORÉE ===
+            # === SECTION STATISTIQUES COMPACTE ===
             stats_frame = tk.LabelFrame(
-                self.viz_section, 
-                text="📊 Métriques de Performance du Réseau",
-                font=('Helvetica', 12, 'bold'),
+                self.viz_scrollable_frame, 
+                text="📊 Métriques",
+                font=('Helvetica', 11, 'bold'),
                 bg=self.controller.colors["bg_white"],
                 fg=self.controller.colors["primary"],
-                padx=20, pady=15
+                padx=15, pady=10
             )
-            stats_frame.pack(fill=tk.X, pady=10, padx=20)
+            stats_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10)
             
             # Calculer des métriques avancées
             mse = mean_squared_error(y_test_display, y_pred_display)
@@ -975,34 +974,27 @@ Précision ±10%: {precision_10:.1f}%"""
             tolerance_10 = sum(1 for real, pred in zip(y_test_display, y_pred_display) if abs((pred - real) / real) <= 0.10) / len(y_test_display) * 100
             tolerance_20 = sum(1 for real, pred in zip(y_test_display, y_pred_display) if abs((pred - real) / real) <= 0.20) / len(y_test_display) * 100
             
-            # Organisez les statistiques en colonnes
-            stats_left = tk.Frame(stats_frame, bg=self.controller.colors["bg_white"])
-            stats_left.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            stats_text = f"""🎯 PRÉCISION:
+• R² Score: {r2:.4f}
+• MAE: {mae:.0f} €
+• RMSE: {rmse:.0f} €
+• MAPE: {mape:.1f}%
+
+✅ TOLÉRANCE:
+• ±5%: {tolerance_5:.0f}%
+• ±10%: {tolerance_10:.0f}%
+• ±20%: {tolerance_20:.0f}%
+
+📊 DONNÉES:
+• Test: {len(y_test_display)} échant.
+• Train: {len(self.X_train)} échant."""
             
-            stats_right = tk.Frame(stats_frame, bg=self.controller.colors["bg_white"])
-            stats_right.pack(side=tk.RIGHT, fill=tk.X, expand=True)
-            
-            left_text = f"""🎯 PRÉCISION DU MODÈLE:
-• R² (Coefficient de détermination): {r2:.4f}
-• MAE (Erreur absolue moyenne): {mae:.0f} €
-• RMSE (Racine de l'erreur quadratique): {rmse:.0f} €
-• MAPE (Erreur absolue moyenne en %): {mape:.2f}%"""
-            
-            right_text = f"""✅ TOLÉRANCE DE PRÉDICTION:
-• ±5% de précision: {tolerance_5:.1f}% des prédictions
-• ±10% de précision: {tolerance_10:.1f}% des prédictions  
-• ±20% de précision: {tolerance_20:.1f}% des prédictions
-• Échantillons de test: {len(y_test_display)}"""
-            
-            tk.Label(stats_left, text=left_text, bg=self.controller.colors["bg_white"],
-                    fg=self.controller.colors["text"], font=('Helvetica', 10), justify=tk.LEFT).pack(anchor="w")
-            
-            tk.Label(stats_right, text=right_text, bg=self.controller.colors["bg_white"],
-                    fg=self.controller.colors["text"], font=('Helvetica', 10), justify=tk.LEFT).pack(anchor="w")
+            tk.Label(stats_frame, text=stats_text, bg=self.controller.colors["bg_white"],
+                    fg=self.controller.colors["text"], font=('Helvetica', 9), justify=tk.LEFT).pack(anchor="w")
             
         except Exception as e:
             error_label = tk.Label(
-                self.viz_section,
+                self.viz_scrollable_frame,
                 text=f"Erreur lors de la création des graphiques: {str(e)}",
                 bg=self.controller.colors["bg_white"],
                 fg=self.controller.colors["accent"],
