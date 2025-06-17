@@ -2,13 +2,19 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import pandas as pd
 import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.data_cleaning import DataCleaner
 
 class DataPreviewPage(tk.Frame):
     def __init__(self, parent, controller):
         super().__init__(parent, bg=controller.colors["bg_light"])
         self.controller = controller
         self.df = None
+        self.original_df = None  # Garde une copie des données originales
         self.target_column = None
+        self.data_cleaner = None
+        self.cleaning_report = None
         self.create_widgets()
         
     def create_widgets(self):
@@ -72,9 +78,11 @@ class DataPreviewPage(tk.Frame):
         
         # Section sélection variables
         self.create_variables_section(content_frame)
-        
-        # Section aide
+          # Section aide
         self.create_help_section(content_frame)
+        
+        # Section nettoyage automatique
+        self.create_cleaning_section(content_frame)
         
         # Section statistiques
         self.create_stats_section(content_frame)
@@ -169,14 +177,24 @@ class DataPreviewPage(tk.Frame):
         
         self.features_canvas.pack(side="left", fill="both", expand=True)
         features_scrollbar.pack(side="right", fill="y")
-        
-        # Boutons de sélection
+          # Boutons de sélection
         buttons_frame = tk.Frame(variables_section, bg=self.controller.colors["bg_white"])
         buttons_frame.pack(fill=tk.X, pady=5)
         
         ttk.Button(buttons_frame, text="Tout sélectionner", command=self.select_all_features).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(buttons_frame, text="Désélectionner", command=self.deselect_all_features).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(buttons_frame, text="Auto (numériques)", command=self.auto_select_features).pack(side=tk.LEFT)
+        
+        # Bouton de sélection automatique plus visible
+        auto_button = tk.Button(
+            buttons_frame, 
+            text="🎯 Sélection Automatique (Colonnes Numériques)", 
+            command=self.auto_select_features,
+            bg=self.controller.colors["success"],
+            fg="white",
+            font=('Helvetica', 10, 'bold'),
+            relief="raised",            cursor="hand2"
+        )
+        auto_button.pack(side=tk.LEFT, padx=(10, 0))
     
     def create_help_section(self, parent):
         help_section = tk.LabelFrame(
@@ -201,6 +219,77 @@ class DataPreviewPage(tk.Frame):
             font=('Helvetica', 10),
             justify="left"
         ).pack(anchor="w", pady=5)
+    
+    def create_cleaning_section(self, parent):
+        cleaning_section = tk.LabelFrame(
+            parent,
+            text="🧹 Nettoyage automatique des données",
+            font=('Helvetica', 12, 'bold'),
+            bg=self.controller.colors["bg_white"],
+            fg=self.controller.colors["primary"],
+            padx=15, pady=10
+        )
+        cleaning_section.pack(fill=tk.X, pady=(0, 15))
+        
+        # Frame pour les boutons d'action
+        action_frame = tk.Frame(cleaning_section, bg=self.controller.colors["bg_white"])
+        action_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Bouton d'analyse
+        analyze_button = tk.Button(
+            action_frame,
+            text="🔍 Analyser la qualité des données",
+            command=self.analyze_data_quality,
+            bg=self.controller.colors["primary"],
+            fg="white",
+            font=('Helvetica', 10, 'bold'),
+            relief="raised",
+            cursor="hand2"
+        )
+        analyze_button.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Bouton de nettoyage automatique
+        self.auto_clean_button = tk.Button(
+            action_frame,
+            text="🧽 Nettoyage automatique",
+            command=self.auto_clean_data,
+            bg=self.controller.colors["success"],
+            fg="white",
+            font=('Helvetica', 10, 'bold'),
+            relief="raised",
+            cursor="hand2",
+            state="disabled"
+        )
+        self.auto_clean_button.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Bouton de restauration
+        self.restore_button = tk.Button(
+            action_frame,
+            text="🔄 Restaurer données originales",
+            command=self.restore_original_data,
+            bg=self.controller.colors["accent"],
+            fg="white",
+            font=('Helvetica', 10, 'bold'),
+            relief="raised",
+            cursor="hand2",
+            state="disabled"
+        )
+        self.restore_button.pack(side=tk.LEFT)
+        
+        # Zone d'affichage du rapport
+        self.cleaning_report_text = tk.Text(
+            cleaning_section,
+            height=6,
+            bg="#f8f9fa",
+            font=('Helvetica', 9),
+            wrap=tk.WORD,
+            state="disabled"
+        )
+        self.cleaning_report_text.pack(fill=tk.X, pady=(5, 0))
+        
+        # Scrollbar pour le rapport
+        report_scrollbar = ttk.Scrollbar(cleaning_section, orient="vertical", command=self.cleaning_report_text.yview)
+        self.cleaning_report_text.configure(yscrollcommand=report_scrollbar.set)
     
     def create_stats_section(self, parent):
         stats_section = tk.LabelFrame(
@@ -269,14 +358,19 @@ class DataPreviewPage(tk.Frame):
             text="Entraîner le modèle",
             command=self.continue_training,
             style='Add.TButton',
-            state="disabled"
-        )
+            state="disabled"        )
         self.continue_button.pack(side=tk.RIGHT)
     
     def load_data(self, file_path, model_info):
         try:
             self.df = pd.read_csv(file_path, low_memory=False)
             self.model_info = model_info
+            
+            # Debug: afficher l'architecture reçue
+            if 'network_architecture' in model_info:
+                print(f"🔍 DEBUG: Architecture reçue dans data_preview_page: {model_info['network_architecture']}")
+            else:
+                print("⚠️ DEBUG: Aucune architecture trouvée dans model_info")
             
             filename = os.path.basename(file_path)
             self.title_label.config(text=f"Prévisualisation - {filename}")
@@ -385,8 +479,7 @@ class DataPreviewPage(tk.Frame):
                         anchor="w"
                     )
                     checkbox.pack(side=tk.LEFT, fill=tk.X, expand=True)
-                    
-                    # Indicateur de type
+                      # Indicateur de type
                     try:
                         numeric_data = pd.to_numeric(self.df[column], errors='coerce')
                         icon = "📊" if not numeric_data.dropna().empty else "📝"
@@ -403,16 +496,36 @@ class DataPreviewPage(tk.Frame):
             var.set(False)
     
     def auto_select_features(self):
+        """Sélectionne automatiquement les colonnes numériques viables"""
         self.deselect_all_features()
         if self.df is not None:
+            numeric_score_threshold = 0.7  # Au moins 70% de données numériques valides
+            
             for column in self.df.columns:
                 if column != self.target_column and column in self.feature_vars:
                     try:
+                        # Essayer de convertir en numérique
                         numeric_data = pd.to_numeric(self.df[column], errors='coerce')
-                        if not numeric_data.dropna().empty:
+                        valid_count = len(numeric_data.dropna())
+                        total_count = len(self.df[column])
+                        
+                        # Calculer le score de validité numérique
+                        numeric_score = valid_count / total_count if total_count > 0 else 0
+                        
+                        # Sélectionner si le score est suffisant et qu'il y a assez de données
+                        if numeric_score >= numeric_score_threshold and valid_count >= 5:
                             self.feature_vars[column].set(True)
-                    except:
+                            
+                    except Exception:
+                        # En cas d'erreur, ne pas sélectionner cette colonne
                         pass
+                        
+            # Afficher un message informatif
+            selected_count = sum(1 for var in self.feature_vars.values() if var.get())
+            if hasattr(self, 'info_text'):
+                current_text = self.info_text.get(1.0, tk.END)
+                self.info_text.delete(1.0, tk.END)
+                self.info_text.insert(1.0, current_text + f"\n✓ {selected_count} variables numériques sélectionnées automatiquement")
     
     def get_selected_features(self):
         return [col for col, var in self.feature_vars.items() if var.get()]
@@ -487,27 +600,45 @@ class DataPreviewPage(tk.Frame):
             )
             if not result:
                 return
-        
-        # Valider que les colonnes sélectionnées sont bien numériques
+          # Valider que les colonnes sélectionnées sont bien numériques
         non_numeric_features = []
+        warning_features = []
+        
         for feature in selected_features:
             try:
                 numeric_data = pd.to_numeric(self.df[feature], errors='coerce')
                 valid_count = len(numeric_data.dropna())
                 total_count = len(self.df[feature])
-                if valid_count == 0 or (valid_count / total_count) < 0.5:
-                    non_numeric_features.append(feature)
-            except:
-                non_numeric_features.append(feature)
+                numeric_ratio = valid_count / total_count if total_count > 0 else 0
+                
+                if valid_count == 0:
+                    non_numeric_features.append(f"{feature} (0% numérique)")
+                elif numeric_ratio < 0.5:
+                    non_numeric_features.append(f"{feature} ({numeric_ratio:.0%} numérique)")
+                elif numeric_ratio < 0.8:
+                    warning_features.append(f"{feature} ({numeric_ratio:.0%} numérique)")
+                    
+            except Exception:
+                non_numeric_features.append(f"{feature} (erreur de conversion)")
         
+        # Afficher les avertissements pour les colonnes avec peu de données numériques
+        if warning_features:
+            warning_msg = "Attention, ces variables ont peu de données numériques:\n" + "\n".join(warning_features[:3])
+            if len(warning_features) > 3:
+                warning_msg += f"\n... et {len(warning_features) - 3} autres"
+            warning_msg += "\n\nContinuer malgré tout ?"
+            
+            if not messagebox.askyesno("Avertissement", warning_msg):
+                return
+        
+        # Bloquer si trop de colonnes sont complètement non-numériques
         if non_numeric_features:
-            messagebox.showwarning(
-                "Attention", 
-                f"Les variables suivantes contiennent trop de données non-numériques:\n" +
-                "\n".join(non_numeric_features[:5]) +
-                ("\n..." if len(non_numeric_features) > 5 else "") +
-                "\n\nVeuillez désélectionner ces variables ou nettoyer vos données."
-            )
+            error_msg = "Les variables suivantes contiennent trop de données non-numériques:\n" + "\n".join(non_numeric_features[:5])
+            if len(non_numeric_features) > 5:
+                error_msg += f"\n... et {len(non_numeric_features) - 5} autres"
+            error_msg += "\n\n💡 Conseil : Utilisez le bouton 'Sélection automatique' pour choisir les bonnes colonnes."
+            
+            messagebox.showwarning("Variables non-numériques", error_msg)
             return
         
         # Valider la variable cible
@@ -527,29 +658,150 @@ class DataPreviewPage(tk.Frame):
         self.model_info["target_column"] = self.target_column
         self.model_info["feature_columns"] = selected_features
         self.model_info["data_shape"] = self.df.shape
-        
-        # Aller à la page d'entraînement au lieu de créer directement le modèle
+          # Aller à la page d'entraînement au lieu de créer directement le modèle
         self.controller.show_model_training(self.model_info["full_path"], self.model_info)
     
     def analyze_data_quality(self):
-        """Analyse la qualité des données et détecte les valeurs aberrantes."""
-        if self.df is not None:
-            # Exemple simple : marquer comme aberrantes les valeurs en dehors de 3 écarts-types
-            numeric_cols = self.df.select_dtypes(include=['float64', 'int64']).columns.tolist()
-            for col in numeric_cols:
-                try:
-                    mean = self.df[col].mean()
-                    std = self.df[col].std()
-                    threshold_upper = mean + 3 * std
-                    threshold_lower = mean - 3 * std
-                    
-                    # Marquer les valeurs aberrantes
-                    outliers = self.df[(self.df[col] > threshold_upper) | (self.df[col] < threshold_lower)]
-                    if not outliers.empty:
-                        self.df.loc[outliers.index, col] = None  # Remplacer par NaN ou une autre méthode
-                except:
-                    continue
+        """Analyse la qualité des données avec le module DataCleaner."""
+        if self.df is None:
+            messagebox.showwarning("Attention", "Aucune donnée à analyser")
+            return
+        
+        try:
+            # Initialiser le nettoyeur de données s'il n'existe pas
+            if self.data_cleaner is None:
+                self.data_cleaner = DataCleaner()
             
-            # Mettre à jour les statistiques après traitement des valeurs aberrantes
-            self.update_statistics()
-            self.update_preview()
+            # Analyser la qualité des données
+            self.cleaning_report = self.data_cleaner.analyze_data_quality(self.df)
+            
+            # Afficher le rapport dans la zone de texte
+            self.display_cleaning_report()
+            
+            # Activer le bouton de nettoyage automatique
+            self.auto_clean_button.config(state="normal")
+            
+            messagebox.showinfo("Analyse terminée", "L'analyse de la qualité des données est terminée.\nConsultez le rapport ci-dessous pour voir les détails.")
+            
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors de l'analyse : {str(e)}")
+    
+    def auto_clean_data(self):
+        """Applique le nettoyage automatique des données."""
+        if self.df is None or self.data_cleaner is None:
+            messagebox.showwarning("Attention", "Veuillez d'abord analyser les données")
+            return
+        
+        try:
+            # Sauvegarder les données originales si ce n'est pas déjà fait
+            if self.original_df is None:
+                self.original_df = self.df.copy()
+            
+            # Appliquer le nettoyage automatique
+            cleaned_df = self.data_cleaner.clean_data_auto(self.df)
+            
+            if cleaned_df is not None:
+                self.df = cleaned_df
+                
+                # Mettre à jour l'affichage
+                self.update_preview()
+                self.update_statistics()
+                
+                # Activer le bouton de restauration
+                self.restore_button.config(state="normal")
+                
+                # Analyser à nouveau après nettoyage pour voir les améliorations
+                self.cleaning_report = self.data_cleaner.analyze_data_quality(self.df)
+                self.display_cleaning_report()
+                
+                messagebox.showinfo("Nettoyage terminé", "Le nettoyage automatique des données a été appliqué avec succès.")
+            else:
+                messagebox.showwarning("Attention", "Aucun nettoyage n'a pu être appliqué")
+                
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors du nettoyage : {str(e)}")
+    
+    def restore_original_data(self):
+        """Restaure les données originales."""
+        if self.original_df is None:
+            messagebox.showwarning("Attention", "Aucune donnée originale à restaurer")
+            return
+        
+        try:
+            # Confirmer la restauration
+            result = messagebox.askyesno(
+                "Confirmer la restauration", 
+                "Êtes-vous sûr de vouloir restaurer les données originales ?\nTous les nettoyages appliqués seront perdus."
+            )
+            
+            if result:
+                self.df = self.original_df.copy()
+                
+                # Mettre à jour l'affichage
+                self.update_preview()
+                self.update_statistics()
+                
+                # Réinitialiser le rapport de nettoyage
+                self.cleaning_report = None
+                self.cleaning_report_text.config(state="normal")
+                self.cleaning_report_text.delete(1.0, tk.END)
+                self.cleaning_report_text.insert(1.0, "Données restaurées. Relancez l'analyse pour voir le rapport.")
+                self.cleaning_report_text.config(state="disabled")
+                
+                # Désactiver le bouton de restauration
+                self.restore_button.config(state="disabled")
+                
+                messagebox.showinfo("Restauration terminée", "Les données originales ont été restaurées.")
+                
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors de la restauration : {str(e)}")
+    
+    def display_cleaning_report(self):
+        """Affiche le rapport de nettoyage dans la zone de texte."""
+        if self.cleaning_report is None:
+            return
+        
+        try:
+            # Activer la zone de texte pour modification
+            self.cleaning_report_text.config(state="normal")
+            self.cleaning_report_text.delete(1.0, tk.END)
+            
+            # Construire le rapport
+            report_text = "📊 RAPPORT D'ANALYSE DE LA QUALITÉ DES DONNÉES\n"
+            report_text += "="*50 + "\n\n"
+            
+            # Valeurs manquantes
+            report_text += "🔍 VALEURS MANQUANTES:\n"
+            missing_info = self.cleaning_report.get('missing_values', {})
+            for col, info in missing_info.items():
+                if info['has_missing']:
+                    report_text += f"  • {col}: {info['count']} ({info['percentage']}%)\n"
+            if not any(info['has_missing'] for info in missing_info.values()):
+                report_text += "  ✅ Aucune valeur manquante détectée\n"
+            report_text += "\n"
+            
+            # Valeurs aberrantes
+            report_text += "⚠️ VALEURS ABERRANTES:\n"
+            outliers_info = self.cleaning_report.get('outliers', {})
+            for col, info in outliers_info.items():
+                if info['count'] > 0:
+                    report_text += f"  • {col}: {info['count']} valeurs aberrantes ({info['percentage']}%)\n"
+            if not any(info['count'] > 0 for info in outliers_info.values()):
+                report_text += "  ✅ Aucune valeur aberrante détectée\n"
+            report_text += "\n"
+            
+            # Recommandations
+            report_text += "💡 RECOMMANDATIONS:\n"
+            recommendations = self.cleaning_report.get('recommendations', [])
+            for i, rec in enumerate(recommendations, 1):
+                report_text += f"  {i}. {rec}\n"
+            
+            if not recommendations:
+                report_text += "  ✅ Aucune action particulière recommandée\n"
+            
+            # Insérer le texte
+            self.cleaning_report_text.insert(1.0, report_text)
+            self.cleaning_report_text.config(state="disabled")
+            
+        except Exception as e:
+            print(f"Erreur lors de l'affichage du rapport : {e}")
