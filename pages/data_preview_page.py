@@ -15,6 +15,7 @@ class DataPreviewPage(tk.Frame):
         self.target_column = None
         self.data_cleaner = None
         self.cleaning_report = None
+        self.encoding_info = None  # Informations d'encodage
         self.create_widgets()
         
     def create_widgets(self):
@@ -78,7 +79,10 @@ class DataPreviewPage(tk.Frame):
         
         # Section sélection variables
         self.create_variables_section(content_frame)
-          # Section aide
+        
+      
+        
+        # Section aide
         self.create_help_section(content_frame)
         
         # Section nettoyage automatique
@@ -805,3 +809,51 @@ class DataPreviewPage(tk.Frame):
             
         except Exception as e:
             print(f"Erreur lors de l'affichage du rapport : {e}")
+    
+
+    def deselect_all_text_features(self):
+        """Désélectionner toutes les variables textuelles"""
+        for var in self.text_feature_vars.values():
+            var.set(False)
+        self.update_text_features_info()
+    
+    def update_text_features_info(self):
+        """Mettre à jour l'information sur les variables textuelles sélectionnées"""
+        selected_text = [col for col, var in self.text_feature_vars.items() if var.get()]
+        count = len(selected_text)
+        
+        if count == 0:
+            info_text = "Aucune variable textuelle sélectionnée"
+        elif count <= 3:
+            info_text = f"{count} variables sélectionnées: {', '.join(selected_text)}"
+        else:
+            info_text = f"{count} variables sélectionnées: {', '.join(selected_text[:3])}, ..."
+        
+        # Estimer le nombre de nouvelles colonnes
+        if count > 0:
+            estimated_new_cols = self.estimate_encoded_columns(selected_text)
+            info_text += f" → ~{estimated_new_cols} nouvelles variables numériques"
+            
+        self.text_features_info.config(text=info_text)
+    
+    def estimate_encoded_columns(self, text_columns):
+        """Estimer le nombre de colonnes après encodage"""
+        if self.df is None:
+            return 0
+        
+        # Utiliser la fonction du module textual_encoder pour plus de cohérence
+        total_new_cols = 0
+        for col in text_columns:
+            if col in self.df.columns:
+                unique_count = self.df[col].nunique()
+                # Utiliser la même logique que dans textual_encoder
+                if unique_count <= 2:
+                    total_new_cols += 1  # Binary encoding
+                elif unique_count <= 10:
+                    total_new_cols += unique_count  # One-hot encoding
+                else:
+                    total_new_cols += 1  # Label encoding
+                    
+        return total_new_cols
+    
+    

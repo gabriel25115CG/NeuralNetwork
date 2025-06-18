@@ -202,29 +202,8 @@ class CreateModelPage(tk.Frame):
         recommendations_frame = tk.Frame(data_section, bg="#f8f9fa", relief="groove", bd=1)
         recommendations_frame.pack(fill=tk.X, pady=(5, 15))
         
-        tk.Label(
-            recommendations_frame,
-            text="💡 Recommandations pour les données immobilières :",
-            bg="#f8f9fa",
-            fg=self.controller.colors["text"],
-            font=('Helvetica', 10, 'bold')
-        ).pack(anchor="w", padx=10, pady=(8, 5))
         
-        recommendations_text = """• Variable cible recommandée : valeur_fonciere (prix de vente)
-• Variables explicatives optimales : surface_reelle_bati, nombre_pieces_principales, 
-  surface_terrain, longitude, latitude
-• Pour le dataset Doubs : utilisez le fichier préparé 'doubs_basic_dataset.csv'
-• Architecture recommandée : [5, 12, 8, 1] pour datasets standards"""
-        
-        tk.Label(
-            recommendations_frame,
-            text=recommendations_text,
-            bg="#f8f9fa",
-            fg=self.controller.colors["text"],
-            font=('Helvetica', 9),
-            justify="left",
-            anchor="w"
-        ).pack(anchor="w", padx=20, pady=(0, 8))
+    
         
         # Section 3: Paramètres du modèle
         params_section = tk.LabelFrame(
@@ -295,13 +274,13 @@ class CreateModelPage(tk.Frame):
         )
         network_section.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
         
-        # Frame principal pour l'architecture (horizontal)
+        # Frame principal pour l'architecture (vertical : contrôles puis visualisation)
         architecture_main_frame = tk.Frame(network_section, bg=self.controller.colors["bg_white"])
         architecture_main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Frame gauche pour les contrôles
+        # Frame pour les contrôles (en haut)
         controls_frame = tk.Frame(architecture_main_frame, bg=self.controller.colors["bg_white"])
-        controls_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 20))        # Contrôles pour les couches
+        controls_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, 20))        # Contrôles pour les couches
         tk.Label(
             controls_frame,
             text="Configuration des couches:",
@@ -310,47 +289,7 @@ class CreateModelPage(tk.Frame):
             font=('Helvetica', 11, 'bold')
         ).pack(anchor="w", pady=(10, 10))
         
-        # Architectures prédéfinies
-        presets_frame = tk.LabelFrame(
-            controls_frame,
-            text="🎯 Architectures optimisées",
-            bg=self.controller.colors["bg_white"],
-            fg=self.controller.colors["text"],
-            font=('Helvetica', 10, 'bold'),
-            padx=10,
-            pady=10
-        )
-        presets_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        # Architectures prédéfinies pour différents cas
-        preset_architectures = [
-            ("💼 Immobilier Simple", [5, 8, 4, 1], "Pour datasets < 1000 lignes"),
-            ("🏠 Immobilier Standard", [5, 12, 8, 1], "Pour datasets 1000-10000 lignes"),  
-            ("🏢 Immobilier Complexe", [5, 16, 12, 6, 1], "Pour datasets > 10000 lignes"),
-            ("📊 Données Génériques", [4, 10, 6, 1], "Architecture polyvalente"),
-        ]
-        
-        for name, architecture, description in preset_architectures:
-            preset_btn_frame = tk.Frame(presets_frame, bg=self.controller.colors["bg_white"])
-            preset_btn_frame.pack(fill=tk.X, pady=2)
-            
-            preset_btn = ttk.Button(
-                preset_btn_frame,
-                text=f"{name}",
-                command=lambda arch=architecture: self.apply_preset_architecture(arch),
-                style='TButton',
-                width=20
-            )
-            preset_btn.pack(side=tk.LEFT)
-            
-            tk.Label(
-                preset_btn_frame,
-                text=f"{architecture} - {description}",
-                bg=self.controller.colors["bg_white"],
-                fg=self.controller.colors["text"],
-                font=('Helvetica', 8)
-            ).pack(side=tk.LEFT, padx=(10, 0))
-        
+      
         # Séparateur
         separator = tk.Frame(controls_frame, height=2, bg=self.controller.colors["primary"])
         separator.pack(fill=tk.X, pady=(10, 15))
@@ -465,9 +404,9 @@ class CreateModelPage(tk.Frame):
         )
         reset_btn.pack(pady=(10, 0))
         
-        # Frame droite pour la visualisation
+        # Frame pour la visualisation (en bas, occupe toute la largeur)
         viz_frame = tk.Frame(architecture_main_frame, bg=self.controller.colors["bg_white"])
-        viz_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        viz_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         
         tk.Label(
             viz_frame,
@@ -477,9 +416,10 @@ class CreateModelPage(tk.Frame):
             font=('Helvetica', 11, 'bold')
         ).pack(anchor="w", pady=(10, 5))
         
-        # Frame pour la visualisation matplotlib
+        # Frame pour la visualisation matplotlib avec hauteur minimale
         self.network_viz_frame = tk.Frame(viz_frame, bg=self.controller.colors["bg_white"], relief=tk.SUNKEN, bd=1)
         self.network_viz_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        self.network_viz_frame.configure(height=520)  # Hauteur minimale pour assurer la visibilité
         
         # Initialiser la visualisation et l'interface des couches
         self.update_layers_interface()
@@ -755,17 +695,22 @@ class CreateModelPage(tk.Frame):
         for widget in self.network_viz_frame.winfo_children():
             widget.destroy()
         
-        # Créer une nouvelle figure matplotlib
-        self.network_fig, self.network_ax = plt.subplots(figsize=(8, 6))
+        # Créer une nouvelle figure matplotlib (plus large pour occuper toute la largeur)
+        self.network_fig, self.network_ax = plt.subplots(figsize=(14, 8))
         self.network_fig.patch.set_facecolor('white')
         
         # Dessiner le réseau
         self._draw_network()
         
-        # Intégrer dans tkinter
+        # Ajuster l'espacement pour utiliser tout l'espace
+        plt.tight_layout()
+        
+        # Intégrer dans tkinter avec une taille minimale
         self.network_canvas = FigureCanvasTkAgg(self.network_fig, master=self.network_viz_frame)
         self.network_canvas.draw()
-        self.network_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        canvas_widget = self.network_canvas.get_tk_widget()
+        canvas_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        canvas_widget.configure(height=500)  # Hauteur minimale garantie
     
     def _draw_network(self):
         """Dessiner l'architecture du réseau de neurones"""

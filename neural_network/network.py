@@ -21,6 +21,7 @@ class NeuralNetwork:
 
     def predict(self, inputs):
         """
+        Forward pass complet à travers le réseau
         inputs: list of floats
         returns: list of outputs
         """
@@ -28,9 +29,45 @@ class NeuralNetwork:
         for layer in self.layers:
             current_inputs = layer.forward(current_inputs)
         return current_inputs
+    
+    def backward(self, target, output):
+        """
+        Backward pass complet (vraie backpropagation)
+        target: valeur cible (y) - peut être un scalaire ou une liste
+        output: sortie prédite du réseau - liste des sorties
+        """
+        # Convertir target en liste si c'est un scalaire
+        if not isinstance(target, list):
+            target = [target]
+        
+        # S'assurer que target et output ont la même taille
+        if len(target) != len(output):
+            if len(target) == 1:
+                target = target * len(output)
+            else:
+                raise ValueError("Incompatibilité entre target et output")
+        
+        # Étape 1: Calculer l'erreur de la couche de sortie
+        # Pour MSE: ∂E/∂output = -(target - output)
+        output_deltas = [-(t - o) for t, o in zip(target, output)]
+        
+        # Étape 2: Propager l'erreur en arrière à travers toutes les couches
+        current_deltas = output_deltas
+        
+        # Parcourir les couches en sens inverse
+        for i in range(len(self.layers) - 1, -1, -1):
+            layer = self.layers[i]
+            
+            # Calculer les gradients pour cette couche et obtenir les deltas pour la couche précédente
+            if i > 0:  # Pas la première couche
+                input_deltas = layer.backward(current_deltas)
+                current_deltas = input_deltas
+            else:  # Première couche - pas besoin de propager plus loin
+                layer.backward(current_deltas)
 
     def train(self, X_data, y_data, learning_rate=0.01, epochs=200, verbose=True, progress_callback=None):
         """
+        Entraînement avec vraie backpropagation
         X_data: list of input lists [[x1, x2], [x3, x4], ...]
         y_data: list of target values [y1, y2, ...]
         progress_callback: fonction appelée à chaque époque avec (epoch, total_epochs, loss)
@@ -42,47 +79,25 @@ class NeuralNetwork:
             total_loss = 0.0
 
             for X, y in zip(X_data, y_data):
-                # Forward pass
-                output = self.predict(X)[0]  # Assuming single output
+                # ÉTAPE 1: Forward pass
+                output = self.predict(X)
+                predicted = output[0] if len(output) == 1 else output  # Support multi-output
                 
-                # Calculate loss
-                error = y - output
-                total_loss += error ** 2 / 2# FIXME: Implémentation simplifiée - Backpropagation à implémenter
-                # Pour l'instant, on met à jour seulement la couche de sortie de manière approximative
-                
-                # Simple gradient descent pour la couche de sortie
-                output_layer = self.layers[-1]  # Dernière couche (sortie)
-                output_neuron = output_layer.neurons[0]  # Premier neurone de sortie
-                
-                # Obtenir les entrées de la couche de sortie (sorties de la couche précédente)
-                if len(self.layers) == 1:
-                    # Pas de couches cachées, les entrées sont X directement
-                    layer_inputs = X
+                # ÉTAPE 2: Calcul de l'erreur (MSE)
+                if isinstance(predicted, list):
+                    error = sum((y - pred) ** 2 for pred in output) / len(output)
                 else:
-                    # Il y a des couches cachées, calculer les sorties de la couche précédente
-                    layer_inputs = X
-                    for layer in self.layers[:-1]:  # Toutes les couches sauf la dernière
-                        layer_inputs = layer.forward(layer_inputs)
+                    error = (y - predicted) ** 2
+                total_loss += error / 2  # Facteur 1/2 comme dans la théorie
                 
-                # Mise à jour des poids de la couche de sortie
-                for i, input_val in enumerate(layer_inputs):
-                    output_neuron.weights[i] -= learning_rate * (-error * input_val)
-                output_neuron.bias -= learning_rate * (-error)
+                # ÉTAPE 3: Backward pass (vraie backpropagation)
+                self.backward(y, output)
                 
-                # TODO: Implémenter la vraie backpropagation pour toutes les couches
-                # Pour l'instant, on fait une mise à jour approximative des couches cachées
-                if len(self.layers) > 1:
-                    # Mise à jour très simplifiée des couches cachées (pas optimal)
-                    for layer_idx in range(len(self.layers) - 1):
-                        layer = self.layers[layer_idx]
-                        layer_inputs_current = X if layer_idx == 0 else layer.forward(X)
-                        
-                        for neuron in layer.neurons:
-                            for i, input_val in enumerate(neuron.weights):
-                                if i < len(X):
-                                    neuron.weights[i] -= learning_rate * 0.001 * error * X[i]  # Très petit ajustement
-                            neuron.bias -= learning_rate * 0.001 * error
+                # ÉTAPE 4: Mise à jour des paramètres
+                for layer in self.layers:
+                    layer.update_params(learning_rate)
 
+            # Calculer la loss moyenne sur tous les échantillons (comme dans la théorie)
             avg_loss = total_loss / n_samples
             losses.append(avg_loss)
 

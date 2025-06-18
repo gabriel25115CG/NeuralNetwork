@@ -823,51 +823,60 @@ class ModelTrainingPage(tk.Frame):
                 y_test_display = [y * (self.target_max - self.target_min) + self.target_min for y in self.y_test]
                 y_pred_display = [y * (self.target_max - self.target_min) + self.target_min for y in y_pred]
             
-            # Créer la figure avec 4 graphiques en 2x2, plus petits
-            fig = plt.figure(figsize=(12, 10))  # Réduit de 16x5 à 12x10
+            # Créer la figure avec 2 graphiques principaux, plus grands et plus lisibles
+            fig = plt.figure(figsize=(16, 8))  # Plus large pour avoir 2 graphiques côte à côte
             fig.patch.set_facecolor('white')
-            fig.suptitle('🧠 Analyse de Performance du Réseau de Neurones', fontsize=14, fontweight='bold', y=0.95)
+            fig.suptitle('🧠 Analyse de Performance du Réseau de Neurones', fontsize=16, fontweight='bold', y=0.95)
             
-            # === GRAPHIQUE 1: Performance de Prédiction (en haut à gauche) ===
-            ax1 = plt.subplot(2, 2, 1)  # 2x2 grid, position 1
+            # === GRAPHIQUE 1: Performance de Prédiction (gauche, plus grand) ===
+            ax1 = plt.subplot(1, 2, 1)  # 1 ligne, 2 colonnes, position 1
             
             # Calculer les erreurs pour la colorisation
             absolute_errors = [abs(real - pred) for real, pred in zip(y_test_display, y_pred_display)]
             
-            # Nuage de points avec colorisation par erreur
+            # Nuage de points avec colorisation par erreur, points plus gros
             scatter = ax1.scatter(y_test_display, y_pred_display, c=absolute_errors, 
-                                 alpha=0.7, s=50, cmap='RdYlGn_r',  # Points plus petits
-                                 edgecolors='black', linewidth=0.3)
+                                 alpha=0.8, s=80, cmap='RdYlGn_r',  # Points plus gros
+                                 edgecolors='black', linewidth=0.5)
             
-            # Ligne parfaite (y=x)
+            # Ligne parfaite (y=x) plus visible
             min_val = min(min(y_test_display), min(y_pred_display))
             max_val = max(max(y_test_display), max(y_pred_display))
             perfect_line = [min_val, max_val]
-            ax1.plot(perfect_line, perfect_line, 'k--', alpha=0.8, linewidth=1.5, label='Parfait')
+            ax1.plot(perfect_line, perfect_line, 'k--', alpha=0.9, linewidth=2.5, label='Prédiction Parfaite')
             
             # Métriques importantes
             from neural_network.utils import r2_score, mean_absolute_error
             r2 = r2_score(y_test_display, y_pred_display)
             mae = mean_absolute_error(y_test_display, y_pred_display)
             
-            ax1.set_xlabel("Valeurs Réelles", fontsize=9)
-            ax1.set_ylabel("Prédictions", fontsize=9)
-            ax1.set_title(f"Performance\nR² = {r2:.3f} | MAE = {mae:.0f}", fontsize=10, fontweight='bold')
-            ax1.grid(True, alpha=0.3)
-            ax1.legend(fontsize=8)
-            ax1.tick_params(labelsize=8)
+            # Colorbar pour les erreurs
+            cbar = plt.colorbar(scatter, ax=ax1, shrink=0.8)
+            cbar.set_label('Erreur Absolue (€)', fontsize=11)
             
-            # === GRAPHIQUE 2: Historique de l'Entraînement (en haut à droite) ===
-            ax2 = plt.subplot(2, 2, 2)  # 2x2 grid, position 2
+            ax1.set_xlabel("Valeurs Réelles (€)", fontsize=12, fontweight='bold')
+            ax1.set_ylabel("Prédictions (€)", fontsize=12, fontweight='bold')
+            ax1.set_title(f"Performance de Prédiction\nR² = {r2:.3f} | MAE = {mae:,.0f}€", fontsize=14, fontweight='bold')
+            ax1.grid(True, alpha=0.4, linestyle='-', linewidth=0.5)
+            ax1.legend(fontsize=11, loc='upper left')
+            ax1.tick_params(labelsize=11)
+            
+            # Formatage des axes avec des milliers
+            ax1.ticklabel_format(style='plain', axis='both')
+            
+            # === GRAPHIQUE 2: Historique de l'Entraînement (droite, plus grand) ===
+            ax2 = plt.subplot(1, 2, 2)  # 1 ligne, 2 colonnes, position 2
+            
             
             if hasattr(self, 'losses') and self.losses:
                 losses = self.losses
                 epochs = list(range(1, len(losses) + 1))
                 
-                ax2.plot(epochs, losses, 'b-', linewidth=1.5, alpha=0.8, label='Loss')
-                ax2.fill_between(epochs, losses, alpha=0.2, color='blue')
+                # Graphique principal de la loss
+                ax2.plot(epochs, losses, 'b-', linewidth=2.5, alpha=0.9, label='Loss', color='#2E86AB')
+                ax2.fill_between(epochs, losses, alpha=0.3, color='#2E86AB')
                 
-                # Ligne de tendance lissée (simplifiée)
+                # Ligne de tendance lissée avec couleur différente
                 if len(losses) > 10:
                     window_size = max(3, len(losses) // 10)
                     smoothed_losses = []
@@ -875,94 +884,63 @@ class ModelTrainingPage(tk.Frame):
                         start = max(0, i - window_size // 2)
                         end = min(len(losses), i + window_size // 2 + 1)
                         smoothed_losses.append(sum(losses[start:end]) / (end - start))
-                    ax2.plot(epochs, smoothed_losses, 'r--', linewidth=1.5, alpha=0.8, label='Tendance')
+                    ax2.plot(epochs, smoothed_losses, '--', linewidth=2.5, alpha=0.9, label='Tendance', color='#F18F01')
                 
-                ax2.set_xlabel("Époques", fontsize=9)
-                ax2.set_ylabel("Loss", fontsize=9)
-                ax2.set_title(f"Convergence\nFinal: {losses[-1]:.4f}", fontsize=10, fontweight='bold')
-                ax2.grid(True, alpha=0.3)
-                ax2.legend(fontsize=8)
+                # Marqueurs pour début et fin
+                ax2.plot(1, losses[0], 'ro', markersize=8, label=f'Début: {losses[0]:.4f}')
+                ax2.plot(len(losses), losses[-1], 'go', markersize=8, label=f'Fin: {losses[-1]:.4f}')
+                
+                ax2.set_xlabel("Époques d'Entraînement", fontsize=12, fontweight='bold')
+                ax2.set_ylabel("Loss (Erreur)", fontsize=12, fontweight='bold')
+                ax2.set_title(f"Convergence de l'Entraînement\nAmélioration: {((losses[0]-losses[-1])/losses[0]*100):.1f}%", 
+                             fontsize=14, fontweight='bold')
+                ax2.grid(True, alpha=0.4, linestyle='-', linewidth=0.5)
+                ax2.legend(fontsize=11, loc='upper right')
                 ax2.set_yscale('log')
-                ax2.tick_params(labelsize=8)
+                ax2.tick_params(labelsize=11)
+                
+                # Annotations importantes
+                if len(losses) > 1:
+                    improvement = ((losses[0] - losses[-1]) / losses[0]) * 100
+                    if improvement > 50:
+                        ax2.annotate(f'Excellent\napprentissage!', 
+                                   xy=(len(losses)*0.7, losses[-1]*2), 
+                                   fontsize=10, fontweight='bold', 
+                                   bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen", alpha=0.7))
             else:
-                ax2.text(0.5, 0.5, 'Historique Loss\nnon disponible', 
-                        ha='center', va='center', transform=ax2.transAxes, fontsize=9)
-                ax2.set_title("Convergence", fontsize=10, fontweight='bold')
+                ax2.text(0.5, 0.5, '⚠️ Historique de Loss\nnon disponible', 
+                        ha='center', va='center', transform=ax2.transAxes, 
+                        fontsize=14, fontweight='bold', 
+                        bbox=dict(boxstyle="round,pad=0.5", facecolor="lightyellow"))
+                ax2.set_title("Convergence de l'Entraînement", fontsize=14, fontweight='bold')
             
-            # === GRAPHIQUE 3: Distribution des Erreurs (en bas à gauche) ===
-            ax3 = plt.subplot(2, 2, 3)  # 2x2 grid, position 3
-            
-            # Calculer les erreurs relatives en pourcentage
-            relative_errors = [(pred - real) / real * 100 for real, pred in zip(y_test_display, y_pred_display) if real != 0]
-            
-            if relative_errors:
-                # Histogramme des erreurs
-                ax3.hist(relative_errors, bins=min(15, len(relative_errors)//2), alpha=0.7, color='skyblue', edgecolor='black', linewidth=0.5)
-                ax3.axvline(0, color='red', linestyle='--', linewidth=2, label='Erreur nulle')
-                
-                mean_error = sum(relative_errors) / len(relative_errors)
-                ax3.axvline(mean_error, color='orange', linestyle='-', linewidth=2, label=f'Moyenne: {mean_error:.1f}%')
-                
-                ax3.set_xlabel("Erreur (%)", fontsize=9)
-                ax3.set_ylabel("Fréquence", fontsize=9)
-                ax3.set_title(f"Distribution des Erreurs\n({len(relative_errors)} échantillons)", fontsize=10, fontweight='bold')
-                ax3.grid(True, alpha=0.3)
-                ax3.legend(fontsize=8)
-                ax3.tick_params(labelsize=8)
-            
-            # === GRAPHIQUE 4: Qualité des Prédictions (en bas à droite) ===
-            ax4 = plt.subplot(2, 2, 4)  # 2x2 grid, position 4
-            
-            if relative_errors:
-                # Compter les prédictions par niveau de qualité
-                excellent = sum(1 for e in relative_errors if abs(e) <= 5)  # ±5%
-                good = sum(1 for e in relative_errors if 5 < abs(e) <= 10)  # ±5-10%
-                acceptable = sum(1 for e in relative_errors if 10 < abs(e) <= 20)  # ±10-20%
-                poor = sum(1 for e in relative_errors if abs(e) > 20)  # >±20%
-                
-                total_predictions = len(relative_errors)
-                
-                # Données pour le graphique en secteurs
-                sizes = [excellent, good, acceptable, poor]
-                labels = [f'Excellent\n(±5%)', f'Bon\n(±10%)', f'Acceptable\n(±20%)', f'Médiocre\n(>±20%)']
-                colors = ['#2ecc71', '#f39c12', '#e67e22', '#e74c3c']
-                explode = (0.05, 0, 0, 0.1 if poor > 0 else 0)
-                
-                # Filtrer les sections vides
-                non_zero_data = [(size, label, color, exp) for size, label, color, exp in zip(sizes, labels, colors, explode) if size > 0]
-                if non_zero_data:
-                    sizes_filtered, labels_filtered, colors_filtered, explode_filtered = zip(*non_zero_data)
-                    
-                    wedges, texts, autotexts = ax4.pie(sizes_filtered, labels=labels_filtered, colors=colors_filtered, 
-                                                      explode=explode_filtered, autopct='%1.0f%%', startangle=90,
-                                                      textprops={'fontsize': 7})
-                    
-                    for autotext in autotexts:
-                        autotext.set_color('white')
-                        autotext.set_fontweight('bold')
-                        autotext.set_fontsize(8)
-                
-                ax4.set_title(f'Qualité des Prédictions\n{excellent+good}/{total_predictions} ≤10%', 
-                             fontsize=10, fontweight='bold')
-            
+            # Ajustement final de l'espacement pour 2 graphiques
             plt.tight_layout()
-            plt.subplots_adjust(top=0.92, hspace=0.4, wspace=0.3)  # Ajuster l'espacement
+            plt.subplots_adjust(top=0.90, wspace=0.3)  # Plus d'espace horizontal
             
             # Intégrer dans l'interface avec scroll
             canvas = FigureCanvasTkAgg(fig, master=self.viz_scrollable_frame)
             canvas.draw()
-            canvas.get_tk_widget().pack(side=tk.LEFT, padx=10)
+            canvas.get_tk_widget().pack(side=tk.TOP, padx=20, pady=10)  # Graphiques en haut
             
-            # === SECTION STATISTIQUES COMPACTE ===
-            stats_frame = tk.LabelFrame(
-                self.viz_scrollable_frame, 
-                text="📊 Métriques",
-                font=('Helvetica', 11, 'bold'),
+            # === SECTION STATISTIQUES DÉTAILLÉE ET ATTRACTIVE ===
+            # Frame principal pour les statistiques
+            stats_main_frame = tk.Frame(self.viz_scrollable_frame, bg=self.controller.colors["bg_white"])
+            stats_main_frame.pack(side=tk.TOP, fill=tk.X, padx=20, pady=10)
+            
+            # Titre de la section
+            stats_title = tk.Label(
+                stats_main_frame,
+                text="📊 RAPPORT DE PERFORMANCE DÉTAILLÉ",
+                font=('Helvetica', 14, 'bold'),
                 bg=self.controller.colors["bg_white"],
-                fg=self.controller.colors["primary"],
-                padx=15, pady=10
+                fg=self.controller.colors["primary"]
             )
-            stats_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10)
+            stats_title.pack(pady=(10, 15))
+            
+            # Container pour 3 colonnes de métriques
+            metrics_container = tk.Frame(stats_main_frame, bg=self.controller.colors["bg_white"])
+            metrics_container.pack(fill=tk.X, pady=10)
             
             # Calculer des métriques avancées
             mse = mean_squared_error(y_test_display, y_pred_display)
@@ -974,23 +952,93 @@ class ModelTrainingPage(tk.Frame):
             tolerance_10 = sum(1 for real, pred in zip(y_test_display, y_pred_display) if abs((pred - real) / real) <= 0.10) / len(y_test_display) * 100
             tolerance_20 = sum(1 for real, pred in zip(y_test_display, y_pred_display) if abs((pred - real) / real) <= 0.20) / len(y_test_display) * 100
             
-            stats_text = f"""🎯 PRÉCISION:
-• R² Score: {r2:.4f}
-• MAE: {mae:.0f} €
-• RMSE: {rmse:.0f} €
-• MAPE: {mape:.1f}%
-
-✅ TOLÉRANCE:
-• ±5%: {tolerance_5:.0f}%
-• ±10%: {tolerance_10:.0f}%
-• ±20%: {tolerance_20:.0f}%
-
-📊 DONNÉES:
-• Test: {len(y_test_display)} échant.
-• Train: {len(self.X_train)} échant."""
+            # COLONNE 1: Métriques de base
+            col1_frame = tk.LabelFrame(
+                metrics_container,
+                text="🎯 PRÉCISION GÉNÉRALE",
+                font=('Helvetica', 11, 'bold'),
+                bg=self.controller.colors["bg_white"],
+                fg=self.controller.colors["primary"],
+                padx=15, pady=10
+            )
+            col1_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, expand=True)
             
-            tk.Label(stats_frame, text=stats_text, bg=self.controller.colors["bg_white"],
-                    fg=self.controller.colors["text"], font=('Helvetica', 9), justify=tk.LEFT).pack(anchor="w")
+            # Déterminer la qualité du R²
+            r2_quality = "Excellent" if r2 > 0.9 else "Bon" if r2 > 0.7 else "Moyen" if r2 > 0.5 else "Faible"
+            r2_color = "#27ae60" if r2 > 0.9 else "#f39c12" if r2 > 0.7 else "#e67e22" if r2 > 0.5 else "#e74c3c"
+            
+            col1_text = f"""• R² Score: {r2:.4f} ({r2_quality})
+• Erreur Absolue Moyenne: {mae:,.0f} €
+• Erreur Quadratique: {rmse:,.0f} €
+• Erreur Relative Moyenne: {mape:.1f}%
+
+💡 Interprétation:
+Le modèle explique {r2*100:.1f}% de la 
+variance des prix."""
+            
+            tk.Label(col1_frame, text=col1_text, bg=self.controller.colors["bg_white"],
+                    fg=self.controller.colors["text"], font=('Helvetica', 10), justify=tk.LEFT).pack(anchor="w")
+            
+            # COLONNE 2: Qualité des prédictions
+            col2_frame = tk.LabelFrame(
+                metrics_container,
+                text="✅ NIVEAUX DE TOLÉRANCE",
+                font=('Helvetica', 11, 'bold'),
+                bg=self.controller.colors["bg_white"],
+                fg=self.controller.colors["success"],
+                padx=15, pady=10
+            )
+            col2_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, expand=True)
+            
+            # Évaluation qualitative
+            overall_quality = "Excellent" if tolerance_10 >= 80 else "Bon" if tolerance_10 >= 60 else "Moyen" if tolerance_10 >= 40 else "À améliorer"
+            
+            col2_text = f"""• Prédictions ±5%: {tolerance_5:.0f}%
+• Prédictions ±10%: {tolerance_10:.0f}%
+• Prédictions ±20%: {tolerance_20:.0f}%
+
+🏆 Qualité globale: {overall_quality}
+
+� Pour l'immobilier:
+±10% est considéré comme 
+une excellente précision."""
+            
+            tk.Label(col2_frame, text=col2_text, bg=self.controller.colors["bg_white"],
+                    fg=self.controller.colors["text"], font=('Helvetica', 10), justify=tk.LEFT).pack(anchor="w")
+            
+            # COLONNE 3: Informations sur les données
+            col3_frame = tk.LabelFrame(
+                metrics_container,
+                text="�📊 DONNÉES D'ENTRAÎNEMENT",
+                font=('Helvetica', 11, 'bold'),
+                bg=self.controller.colors["bg_white"],
+                fg=self.controller.colors["accent"],
+                padx=15, pady=10
+            )
+            col3_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, expand=True)
+            
+            # Calculs supplémentaires
+            total_samples = len(self.X_train) + len(y_test_display)
+            test_ratio = len(y_test_display) / total_samples * 100
+            
+            # Info sur la convergence
+            convergence_info = ""
+            if hasattr(self, 'losses') and self.losses:
+                improvement = ((self.losses[0] - self.losses[-1]) / self.losses[0]) * 100
+                convergence_info = f"• Amélioration Loss: {improvement:.1f}%"
+            
+            col3_text = f"""• Échantillons totaux: {total_samples:,}
+• Données d'entraînement: {len(self.X_train):,}
+• Données de test: {len(y_test_display):,}
+• Ratio test: {test_ratio:.1f}%
+{convergence_info}
+
+🧠 Architecture:
+{len(self.model.layers)} couches
+{sum(len(layer.neurons) for layer in self.model.layers):,} neurones"""
+            
+            tk.Label(col3_frame, text=col3_text, bg=self.controller.colors["bg_white"],
+                    fg=self.controller.colors["text"], font=('Helvetica', 10), justify=tk.LEFT).pack(anchor="w")
             
         except Exception as e:
             error_label = tk.Label(
